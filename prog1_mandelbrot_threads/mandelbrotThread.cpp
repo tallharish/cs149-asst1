@@ -13,6 +13,8 @@ typedef struct
     int *output;
     int threadId;
     int numThreads;
+    int startRow;
+    int totalRows;
 } WorkerArgs;
 
 extern void mandelbrotSerial(
@@ -35,7 +37,10 @@ void workerThreadStart(WorkerArgs *const args)
     // program that uses two threads, thread 0 could compute the top
     // half of the image and thread 1 could compute the bottom half.
 
-    printf("Hello world from thread %d\n", args->threadId);
+    double startTime = CycleTimer::currentSeconds();
+    mandelbrotSerial(args->x0, args->y0, args->x1, args->y1, args->width, args->height, args->startRow, args->totalRows, args->maxIterations, args->output);
+    double endTime = CycleTimer::currentSeconds();
+    printf("Thread %d : \t\t[%.3f] ms\n",  args->threadId, (endTime - startTime) * 1000);
 }
 
 //
@@ -61,9 +66,9 @@ void mandelbrotThread(
     std::thread workers[MAX_THREADS];
     WorkerArgs args[MAX_THREADS];
 
+    int total_rows_covered = 0;
     for (int i = 0; i < numThreads; i++)
     {
-
         // TODO FOR CS149 STUDENTS: You may or may not wish to modify
         // the per-thread arguments here.  The code below copies the
         // same arguments for each thread
@@ -78,6 +83,19 @@ void mandelbrotThread(
         args[i].output = output;
 
         args[i].threadId = i;
+
+        args[i].startRow = i*(height/numThreads);
+        printf("\n%d - startRow %d", i, args[i].startRow);
+        args[i].totalRows = (height/numThreads);
+        total_rows_covered += args[i].totalRows;
+        printf("\n%d - totalRows %d", i, args[i].totalRows);
+        printf("\n");
+    }
+
+    // For cases where height does not divide with numThreads (say 7), add remaining rows in the last thread
+    if (total_rows_covered < height) {
+        args[numThreads-1].totalRows += (height - total_rows_covered);
+        printf("\n%d - totalRows %d", numThreads-1, args[numThreads-1].totalRows);
     }
 
     // Spawn the worker threads.  Note that only numThreads-1 std::threads

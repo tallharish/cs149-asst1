@@ -1,7 +1,14 @@
 #include <stdio.h>
 #include <thread>
+#include <queue>
 
 #include "CycleTimer.h"
+
+typedef struct 
+{
+    int startRow;
+    int numberRows;
+} Pair;
 
 typedef struct
 {
@@ -15,6 +22,7 @@ typedef struct
     int numThreads;
     int startRow;
     int totalRows;
+    std::queue<Pair> pairs;
 } WorkerArgs;
 
 extern void mandelbrotSerial(
@@ -36,11 +44,15 @@ void workerThreadStart(WorkerArgs *const args)
     // to compute a part of the output image.  For example, in a
     // program that uses two threads, thread 0 could compute the top
     // half of the image and thread 1 could compute the bottom half.
-
-    double startTime = CycleTimer::currentSeconds();
-    mandelbrotSerial(args->x0, args->y0, args->x1, args->y1, args->width, args->height, args->startRow, args->totalRows, args->maxIterations, args->output);
-    double endTime = CycleTimer::currentSeconds();
-    printf("Thread %d : \t\t[%.3f] ms\n",  args->threadId, (endTime - startTime) * 1000);
+    int i = 0;
+    while (!args->pairs.empty()) {
+        double startTime = CycleTimer::currentSeconds();
+        mandelbrotSerial(args->x0, args->y0, args->x1, args->y1, args->width, args->height, args->pairs.front().startRow, args->pairs.front().numberRows, args->maxIterations, args->output);
+        double endTime = CycleTimer::currentSeconds();
+        printf("Thread %d - partition %d: \t\t[%.3f] ms\n",  args->threadId, i, (endTime - startTime) * 1000);
+        args->pairs.pop();
+        i = i + 1;
+    }
 }
 
 //
@@ -55,6 +67,10 @@ void mandelbrotThread(
     int maxIterations, int output[])
 {
     static constexpr int MAX_THREADS = 32;
+    static int numPartitions = 4;
+    int numPairs = numThreads*numPartitions;
+    //Pair *p = new Pair[];
+    Pair *pairs = (Pair *)malloc(numPairs * sizeof(Pair));
 
     if (numThreads > MAX_THREADS)
     {
@@ -66,7 +82,19 @@ void mandelbrotThread(
     std::thread workers[MAX_THREADS];
     WorkerArgs args[MAX_THREADS];
 
+    int numberRowsPerTask = height/(numPairs);
     int total_rows_covered = 0;
+    for (int p = 0; p < numThreads*numPartitions; ++p) {
+        pairs[p].startRow = p*numberRowsPerTask;
+        pairs[p].numberRows = numberRowsPerTask;
+        printf("Pair %d: (%d, %d)\n", p, pairs[p].startRow, pairs[p].numberRows);
+        total_rows_covered += numberRowsPerTask;
+    }
+    // For odd numThreads*numPartitions, assign remaining fraction to the last pair. 
+    if (total_rows_covered < height) {
+        pairs[numThreads*numPartitions - 1].numberRows += (height - total_rows_covered);
+    }
+    
     for (int i = 0; i < numThreads; i++)
     {
         // TODO FOR CS149 STUDENTS: You may or may not wish to modify
@@ -83,19 +111,11 @@ void mandelbrotThread(
         args[i].output = output;
 
         args[i].threadId = i;
-
-        args[i].startRow = i*(height/numThreads);
-        printf("\n%d - startRow %d", i, args[i].startRow);
-        args[i].totalRows = (height/numThreads);
-        total_rows_covered += args[i].totalRows;
-        printf("\n%d - totalRows %d", i, args[i].totalRows);
-        printf("\n");
     }
 
-    // For cases where height does not divide with numThreads (say 7), add remaining rows in the last thread
-    if (total_rows_covered < height) {
-        args[numThreads-1].totalRows += (height - total_rows_covered);
-        printf("\n%d - totalRows %d", numThreads-1, args[numThreads-1].totalRows);
+    for (int p = 0; p < numThreads*numPartitions; ++p) {
+        int threadIndex = p % numThreads;
+        args[threadIndex].pairs.push(pairs[p]);
     }
 
     // Spawn the worker threads.  Note that only numThreads-1 std::threads

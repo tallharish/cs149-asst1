@@ -80,9 +80,9 @@ void computeAssignments(WorkerArgs *const args)
   }
 
   // Assign datapoints to closest centroids
-  for (int k = args->start; k < args->end; k++)
+  for (int m = 0; m < args->M; m++)
   {
-    for (int m = 0; m < args->M; m++)
+    for (int k = args->start; k < args->end; k++)
     {
       double d = dist(&args->data[m * args->N],
                       &args->clusterCentroids[k * args->N], args->N);
@@ -197,6 +197,7 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
   // Used to track convergence
   double *prevCost = new double[K];
   double *currCost = new double[K];
+  double startTime, endTime;
 
   // The WorkerArgs array is used to pass inputs to and return output from
   // functions.
@@ -230,9 +231,21 @@ void kMeansThread(double *data, double *clusterCentroids, int *clusterAssignment
     args.start = 0;
     args.end = K;
 
+    startTime = CycleTimer::currentSeconds();
     computeAssignments(&args);
+    endTime = CycleTimer::currentSeconds();
+    printf("computeAssignments: \t\t[%.3f] ms\n", (endTime - startTime) * 1000);
+
+    startTime = CycleTimer::currentSeconds();
     computeCentroids(&args);
+    endTime = CycleTimer::currentSeconds();
+    printf("computeCentroids: \t\t[%.3f] ms\n", (endTime - startTime) * 1000);
+
+    startTime = CycleTimer::currentSeconds();
     computeCost(&args);
+    endTime = CycleTimer::currentSeconds();
+    printf("computeCost: \t\t[%.3f] ms\n", (endTime - startTime) * 1000);
+
 
     iter++;
   }

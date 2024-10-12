@@ -293,12 +293,13 @@ void clampedExpVector(float *values, int *exponents, float *output, int N)
   __cs149_vec_float allNines =  _cs149_vset_float(9.999999f);
   __cs149_vec_float x, result;
   __cs149_vec_int y, count;
-  __cs149_mask maskAll, maskYisZero, maskYisNotZero, maskCnt, resultOverflow;
+  __cs149_mask maskAll, maskYisZero, maskYisNotZero, maskCnt, resultOverflow, maskRemainder, tempMask;
   float oneF = 1.f;
   float ninesF = 9.999999f;
   int bits;
+  int i = 0;
 
-  for (int i = 0; i < N; i += VECTOR_WIDTH) {
+  for (; i + VECTOR_WIDTH - 1 < N; i += VECTOR_WIDTH) {
     maskAll = _cs149_init_ones();
     maskYisZero = _cs149_init_ones(0);
 
@@ -320,8 +321,39 @@ void clampedExpVector(float *values, int *exponents, float *output, int N)
       bits = _cs149_cntbits(maskCnt);
     }
     _cs149_vgt_float(resultOverflow, result, allNines, maskAll);
-    _cs149_vset_float(result, ninesF, resultOverflow); 
+    _cs149_vset_float(result, ninesF, resultOverflow);
     _cs149_vstore_float(output + i, result, maskAll);
+  }
+
+  int remainder = N - i;
+  if (remainder > 0) {
+    //maskRemainder = (1 << remainder) - 1;
+    maskRemainder = _cs149_init_ones(remainder);
+
+    _cs149_vload_float(x, values + i, maskRemainder);         // x = values[i]
+    _cs149_vload_int(y, exponents + i, maskRemainder);        // y = exponents[i]
+
+    _cs149_veq_int(maskYisZero, y, allZerosI, maskRemainder);       // y == 0
+    _cs149_vset_float(result, oneF, maskYisZero);             // result[i] = 1.f
+
+    tempMask = _cs149_mask_not(maskYisZero);                  // else (y != 0)
+    maskYisNotZero = _cs149_mask_and(tempMask, maskRemainder);
+
+    _cs149_vmove_float(result, x, maskYisNotZero);            // result[i] = x
+    _cs149_vsub_int(count, y, allOnesI, maskYisNotZero);      // count = y - 1
+    _cs149_vgt_int(maskCnt, count, allZerosI, maskYisNotZero);
+
+    bits = _cs149_cntbits(maskCnt);
+    while (bits > 0) {
+      _cs149_vmult_float(result, result, x, maskCnt);
+      _cs149_vsub_int(count, count, allOnesI, maskCnt);
+      _cs149_vgt_int(maskCnt, count, allZerosI, maskCnt);
+      bits = _cs149_cntbits(maskCnt);
+    }
+
+    _cs149_vgt_float(resultOverflow, result, allNines, maskRemainder);
+    _cs149_vset_float(result, ninesF, resultOverflow);
+    _cs149_vstore_float(output + i, result, maskRemainder);
   }
 }
 
